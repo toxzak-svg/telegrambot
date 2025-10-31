@@ -1,5 +1,6 @@
 # bot.py - Telegram bot with Stars payment integration
 import time
+import os
 from database import init_db, get_user, set_user
 import telebot
 from telebot import types
@@ -8,7 +9,10 @@ from telebot import types
 init_db()
 
 # Bot configuration
-TOKEN = "8497823601:AAGqS3S0FV1AvMuEsC_txUDQG0xUi9e1ogo"
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TOKEN:
+    raise ValueError("TELEGRAM_TOKEN environment variable is not set. Please set it before running the bot.")
+
 bot = telebot.TeleBot(TOKEN)
 
 # Configuration
@@ -24,43 +28,42 @@ def can_use_utility(user_id):
     """Check if user has uses left or active premium"""
     now = int(time.time())
     uses_left, premium_until = get_user(user_id)
-
+    
     # Check if premium is active
     if premium_until and now < premium_until:
         return True, "premium"
-
+    
     # Check if it's a new week (reset free uses)
     if premium_until is None or now > premium_until:
         # New week, reset free uses
         set_user(user_id, FREE_WEEKLY, now + SECONDS_IN_WEEK)
         return True, "free"
-
+    
     # Check if user has free uses left
     if uses_left and uses_left > 0:
         return True, "free"
-
+    
     return False, None
 
 def deduct_use(user_id):
     """Deduct one use from user's free uses"""
     uses_left, premium_until = get_user(user_id)
     now = int(time.time())
-
+    
     # Don't deduct if premium is active
     if premium_until and now < premium_until:
         return
-
+    
     # Deduct one use
     if uses_left and uses_left > 0:
         set_user(user_id, uses_left - 1, premium_until)
 
 # Command handlers
-
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     """Handle /start command and check for 'premium' parameter"""
     user_id = message.from_user.id
-
+    
     # Check if user wants to upgrade to premium
     # Command format: /start premium
     if len(message.text.split()) > 1 and message.text.split()[1].lower() == 'premium':
@@ -68,20 +71,19 @@ def handle_start(message):
     else:
         # Normal start message
         can_use, usage_type = can_use_utility(user_id)
-
         if usage_type == "premium":
             status_text = "✨ You have Premium access!"
         else:
             uses_left, _ = get_user(user_id)
             status_text = f"📊 Free uses remaining: {uses_left}/{FREE_WEEKLY}"
-
+        
         markup = types.InlineKeyboardMarkup()
         upgrade_btn = types.InlineKeyboardButton(
             "⭐ Upgrade to Premium",
             callback_data="upgrade_premium"
         )
         markup.add(upgrade_btn)
-
+        
         bot.send_message(
             message.chat.id,
             f"Welcome to TeleTextPlus! 🎉\n\n{status_text}\n\n"
@@ -103,7 +105,7 @@ def handle_upgrade_callback(call):
 def send_premium_invoice(message):
     """Send Telegram Stars invoice for premium upgrade"""
     user_id = message.chat.id
-
+    
     # Check if already premium
     can_use, usage_type = can_use_utility(message.from_user.id)
     if usage_type == "premium":
@@ -112,14 +114,14 @@ def send_premium_invoice(message):
             "✨ You already have Premium access!"
         )
         return
-
+    
     # Create invoice for Telegram Stars payment
     # Note: Telegram Stars use "XTR" as currency
     prices = [types.LabeledPrice(
         label="Premium Access (7 days)",
         amount=PREMIUM_PRICE_STARS  # Amount in Stars
     )]
-
+    
     try:
         bot.send_invoice(
             chat_id=user_id,
@@ -158,14 +160,14 @@ def handle_successful_payment(message):
     """
     user_id = message.from_user.id
     payment_info = message.successful_payment
-
+    
     # Calculate premium expiration time (7 days from now)
     now = int(time.time())
     premium_until = now + (PREMIUM_DURATION_DAYS * 24 * 60 * 60)  # 7 days in seconds
-
+    
     # Update database - set uses to unlimited (999) and premium_until timestamp
     set_user(user_id, 999, premium_until)  # 999 uses as "unlimited" indicator
-
+    
     # Send confirmation message
     bot.send_message(
         message.chat.id,
@@ -174,7 +176,7 @@ def handle_successful_payment(message):
         f"💫 Enjoy unlimited access to all features!\n\n"
         f"Transaction ID: {payment_info.telegram_payment_charge_id}"
     )
-
+    
     # Log the successful payment (optional)
     print(f"Premium upgrade successful for user {user_id}. "
           f"Charge ID: {payment_info.telegram_payment_charge_id}, "
