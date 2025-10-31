@@ -1,0 +1,12 @@
+# Python Telegram Bot Requirements
+# For Telegram Stars payment integration
+
+# pyTelegramBotAPI - Simple and extensible Telegram bot library
+pyTelegramBotAPI>=4.14.0
+
+# Flask (if using webhooks via app.py)
+Flask>=3.0.0
+
+# Standard library - no installation needed:
+# - sqlite3 (built-in)
+# - time (built-in)
